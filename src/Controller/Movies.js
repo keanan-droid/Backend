@@ -1,46 +1,78 @@
+import { response } from "express";
+import { DatabaseError } from "pg";
 import { DbConfig } from "../Config/db.config";
 import { APIError } from "../Middlewares/Error";
 
 export class MovieController {
+
     //ADD MOVIE
-    async addMovie(request, response) {
-        const pool = new DbConfig().getPool();
+    async addMovie(req, res) {
+        const { IncomingForm } = require('formidable');
+        const cloudinary = require('cloudinary');
 
-        const { title, genre, ageRestriction, imageUrl, isAvaliable } = request.body;
+        cloudinary.v2.config({
+            cloud_name:'dvmv4ezpg',
+            api_key:'246889587876586',
+            api_secret:'ynmEFmpxWQmvNZEBzaQufPX6Lkg'
+        })
 
-        if (!title || !genre || !ageRestriction ||!imageUrl || !isAvaliable) {
-            return response.status(400).json({ msg: "All fields are required to register a book on the database" })
-             // next(new APIError('All fields are required to register a book on the database').badRequest())
-        }
+        const form = new IncomingForm();
 
-        try {
-            
-            const pgClient = await pool.connect();
+        form.parse(req, (error, fields,files) => {
+            const {movie} = files;
+            const { title, genre, ageRestriction } = fields;
+            const isAvaliable = "true";
+                
+            cloudinary.v2.uploader.upload(
+                movie.filepath,
+                { folder: '/movieThumbnail' },
+                (error, info) => {
+                    if (error) {
+                        return response.status(500).json({msg: 'File upload failed', error});
+                    }
+                    const imageUrl = info.secure_url
 
-            const query = {
-                text: "INSERT INTO Movies (title, genre, ageRestriction, imageUrl, isAvaliable) VALUES ($1, $2, $3, $4, $5)",
-                values: [title, genre, ageRestriction, imageUrl, isAvaliable],
-            };
+                    console.log(imageUrl);
+                    if (!title || !genre || !ageRestriction || !imageUrl || !isAvaliable) {
+                        return res.status(400).json({ msg: "All fields are required to register a movie on the database" })
+                        // next(new APIError('All fields are required to register a book on the database').badRequest())
+                    }
 
-            await pgClient.query(query);
-            pgClient.release();
-            return response
-            .status(201)
-            .json({ msg: "Movie created"})
+                    const pool = new DbConfig().getPool();
 
-        } catch (error) {
-            return response.status(500).json(error)
-        }
+                    try {
+
+                        const pgClient = await pool.connect();
+
+                        const query = {
+                            text: "INSERT INTO Movies (title, genre, ageRestriction, imageUrl, isAvaliable) VALUES ($1, $2, $3, $4, $5)",
+                            values: [title, genre, ageRestriction, imageUrl, isAvaliable],
+                        };
+
+                        await pgClient.query(query);
+                        pgClient.release();
+                        return response
+                        .status(201)
+                        .json({ msg: "Movie created"})
+
+                    } catch (error) {
+                        return response.status(500).json(error)
+                    }
+                }
+
+            );
+    
+        })
     }
 
     //DELETE MOVIE
     async deleteMovie(request, response) {
         const pool = new DbConfig().getPool();
 
-        const title = request.body;
+        const id = request.params.id
 
-        if (!title) {
-            return response.status(400).json({ msg: "Please input a title" })
+        if (!id) {
+            return response.status(400).json({ msg: "No movie has been selected" })
         }
 
         try {
@@ -48,8 +80,8 @@ export class MovieController {
             const pgClient = await pool.connect();
 
             const query = {
-                text:"DELETE FROM Movies WHERE title = $1",
-                values: [title],
+                text:"DELETE FROM Movies WHERE id = $1",
+                values: [id],
             }
 
             await pgClient.query(query).rows;
@@ -63,13 +95,13 @@ export class MovieController {
         }
     }
 
-    // GET MOVIE BY ID
-    async movieById(request, response) {
+    // GET MOVIE BY TITLE FOR USER
+    async movieByTitle(request, response) {
         const pool = new DbConfig().getPool();
 
-        const id = request.parms.id;
+        const title = request.parms.title;
 
-        if (!id) {
+        if (!title) {
             return response.status(400).json({ msg: "No movie has been selected" })
         }
 
@@ -78,8 +110,8 @@ export class MovieController {
             const pgClient = await pool.connect();
 
             let query = {
-                text: "SELECT * FROM Movies WHERE id = $1",
-                values: [id],
+                text: "SELECT * FROM Movies WHERE title = $1",
+                values: [title],
             }
 
             let movie = await (await pgClient.query(query)).rows;
@@ -145,60 +177,6 @@ export class MovieController {
             
         } catch (error) {
             return response.status(500).json(error)
-        }
-    }
-
-    //FILTER BY UNRETURNED
-    async filterByUnReturned(request, response) {
-        const pool = new DbConfig().getPool();
-
-        const isAvailable = false;
-        
-        try {
-
-            const pgClient = await pool.connect();
-
-            let query = {
-                text: "SELECT * FROM Movies WHERE isAvaliable = $1",
-                values: [isAvailable],
-            }
-
-           let notReturned = await (await pgClient.query(query)).rows;
-           
-           pgClient.release();
-           return response
-           .status(201)
-           .json({ notReturned });
-            
-        } catch (error) {
-            return response.status(500).json(error)
-        }
-    }
-
-    async rentMovie(request, response) {
-        const pool = new DbConfig().getPool();
-
-        const id = request.params.id;
-
-        if (!id) {
-            return res.status(400).json({ msg: "You have not selected a movie" })
-        }
-
-        try {
-            
-            const pgClient = await pool.connect();
-
-            const query = {
-                text: "SELECT * FROM Movies WHERE id = $1",
-                values: [id],
-            }
-
-            const movie = await (await pgClient.query(query)).rows[0];
-            pgClient.release();
-            return res.status(201).json({ movie })
-
-        } catch (error) {
-            return res.status(500).json(error)
         }
     }
 
